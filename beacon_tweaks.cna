@@ -1,0 +1,30 @@
+# Source: https://github.com/vulp1n3/Aggressor_Scripts/blob/master/beacon_tweaks.cna
+# Thanks to @vulp1n3 for the original script
+# Author: @fastlorenzo
+
+# Change the prompt shown in beacon console output to match
+# [host] user (pid/arch)> 
+# bid, from, text, when
+set BEACON_INPUT {
+    $bd = bdata($1);
+    
+    $user_color = "\c6";
+
+    # Check if the current session is running in a privileged context and set the corresponding color
+    if (-isadmin $bd['id']) {
+        $user_color = "\c5";
+    }
+    
+    # Create the input prompt text
+    $tmp_line = "\n\cF[\cA" . $bd['computer'] . "\cF] " . $user_color . $bd['user'] . "\cF (\cC" . $bd['pid'] . "\cF/\cE" . $bd['barch'] . "\cF)\o> $3";
+
+
+    # Check if the current user did run the command. If not, prepend the username
+    if ($2 eq mynick()) {
+    	return $tmp_line;
+    } else {
+    	return "$2 " . $temp_line;
+    }
+}
+
+

